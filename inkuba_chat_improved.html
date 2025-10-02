@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>InkubaLM Chat Interface</title>
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+            max-width: 900px; 
+            margin: 0 auto; 
+            padding: 20px; 
+            background-color: #f5f5f5;
+        }
+        .chat-container { 
+            background: white;
+            border: 1px solid #ddd; 
+            border-radius: 10px;
+            height: 500px; 
+            overflow-y: auto; 
+            padding: 20px; 
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .message { 
+            margin: 15px 0; 
+            padding: 15px; 
+            border-radius: 10px; 
+            max-width: 80%;
+            line-height: 1.4;
+        }
+        .user { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            margin-left: auto;
+            text-align: right; 
+        }
+        .assistant { 
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            margin-right: auto;
+        }
+        .input-container { 
+            display: flex; 
+            gap: 10px; 
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        input[type="text"] { 
+            flex: 1; 
+            padding: 12px; 
+            border: 2px solid #ddd; 
+            border-radius: 25px; 
+            font-size: 16px;
+            outline: none;
+        }
+        input[type="text"]:focus { border-color: #667eea; }
+        button { 
+            padding: 12px 24px; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; 
+            border: none; 
+            border-radius: 25px; 
+            cursor: pointer;
+            font-weight: bold;
+            transition: transform 0.2s;
+        }
+        button:hover { transform: scale(1.05); }
+        button:disabled { 
+            opacity: 0.6; 
+            cursor: not-allowed; 
+            transform: none;
+        }
+        .status { 
+            padding: 12px; 
+            margin: 10px 0; 
+            border-radius: 8px; 
+            text-align: center;
+            font-weight: 500;
+        }
+        .error { background-color: #ffebee; color: #c62828; border: 1px solid #ffcdd2; }
+        .success { background-color: #e8f5e8; color: #2e7d32; border: 1px solid #c8e6c9; }
+        .loading { background-color: #fff3e0; color: #ef6c00; border: 1px solid #ffcc02; }
+        .typing { 
+            opacity: 0.7; 
+            font-style: italic; 
+        }
+        .conversation-stats {
+            text-align: center;
+            margin: 10px 0;
+            color: #666;
+            font-size: 14px;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .server-info {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🌍 InkubaLM Chat Interface</h1>
+    <div id="status" class="status success">Ready to chat with InkubaLM-0.4B</div>
+    
+    <div class="conversation-stats">
+        <span id="messageCount">Messages: 0</span> | 
+        <span id="tokenCount">Tokens used: 0</span>
+    </div>
+    
+    <div id="chatContainer" class="chat-container">
+        <div class="message assistant">
+            Hello! I'm InkubaLM, an African language model. I can help you with various tasks including answering questions, writing, and conversation in multiple African languages. What would you like to talk about?
+        </div>
+    </div>
+    
+    <div class="input-container">
+        <input type="text" id="messageInput" placeholder="Type your message here..." onkeypress="handleKeyPress(event)">
+        <button id="sendButton" onclick="sendMessage()">Send</button>
+    </div>
+    
+    <div class="server-info">
+        <h3>🚀 Server Status</h3>
+        <p><strong>Model:</strong> InkubaLM-0.4B</p>
+        <p><strong>Endpoint:</strong> <code>http://localhost:8000</code></p>
+        <p><strong>API:</strong> vLLM OpenAI-compatible</p>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000/v1';
+        let conversationHistory = [];
+        let messageCount = 0;
+        let totalTokens = 0;
+        
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const sendButton = document.getElementById('sendButton');
+            const message = input.value.trim();
+            
+            if (!message) return;
+            
+            // Disable input while processing
+            input.disabled = true;
+            sendButton.disabled = true;
+            sendButton.textContent = 'Sending...';
+            
+            // Add user message to chat
+            addMessage(message, 'user');
+            conversationHistory.push({role: 'user', content: message});
+            input.value = '';
+            
+            // Show typing indicator
+            const typingDiv = addMessage('InkubaLM is thinking...', 'assistant typing');
+            updateStatus('🤔 InkubaLM is processing your message...', 'loading');
+            
+            try {
+                // Build conversation context for prompt
+                const conversationPrompt = buildConversationPrompt(message);
+                
+                const response = await fetch(`${API_BASE}/completions`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        model: 'InkubaLM-0.4B',
+                        prompt: conversationPrompt,
+                        max_tokens: 150,
+                        temperature: 0.7,
+                        stop: ['Human:', 'User:', '\\n\\nHuman:', '\\n\\nUser:'],
+                        top_p: 0.9
+                    })
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`Server error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
+                }
+                
+                const data = await response.json();
+                let reply = data.choices[0].text.trim();
+                
+                // Clean up the response
+                reply = cleanResponse(reply);
+                
+                // Remove typing indicator and add real response
+                typingDiv.remove();
+                addMessage(reply, 'assistant');
+                conversationHistory.push({role: 'assistant', content: reply});
+                
+                // Update stats
+                totalTokens += data.usage.total_tokens;
+                updateStats();
+                updateStatus('✅ Message sent successfully!', 'success');
+                
+            } catch (error) {
+                console.error('Error:', error);
+                typingDiv.remove();
+                addMessage(`❌ Error: ${error.message}`, 'assistant');
+                updateStatus('❌ Error communicating with server. Make sure vLLM server is running on localhost:8000', 'error');
+            } finally {
+                // Re-enable input
+                input.disabled = false;
+                sendButton.disabled = false;
+                sendButton.textContent = 'Send';
+                input.focus();
+            }
+        }
+        
+        function buildConversationPrompt(newMessage) {
+            // Build a conversation-style prompt
+            let prompt = "";
+            
+            // Add recent conversation history (last 6 messages to stay within context)
+            const recentHistory = conversationHistory.slice(-6);
+            for (const msg of recentHistory) {
+                if (msg.role === 'user') {
+                    prompt += `Human: ${msg.content}\\n`;
+                } else {
+                    prompt += `InkubaLM: ${msg.content}\\n`;
+                }
+            }
+            
+            // Add the new message
+            prompt += `Human: ${newMessage}\\n`;
+            prompt += "InkubaLM:";
+            
+            return prompt;
+        }
+        
+        function cleanResponse(response) {
+            // Remove unwanted patterns and clean up response
+            response = response.replace(/^(InkubaLM:|Assistant:|AI:)\\s*/i, '');
+            response = response.replace(/Human:.*$/i, '');
+            response = response.replace(/\\n\\n.*$/s, '');
+            response = response.replace(/This is a conversation with InkubaLM, a helpful African language model\\.?\\s*/gi, '');
+            response = response.trim();
+            
+            // If response is empty or too short, provide a fallback
+            if (!response || response.length < 3) {
+                response = "I apologize, but I didn't generate a proper response. Could you please rephrase your question?";
+            }
+            
+            return response;
+        }
+        
+        function addMessage(content, role) {
+            const container = document.getElementById('chatContainer');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${role}`;
+            messageDiv.textContent = content;
+            container.appendChild(messageDiv);
+            container.scrollTop = container.scrollHeight;
+            
+            if (role.includes('user') || role.includes('assistant')) {
+                messageCount++;
+            }
+            
+            return messageDiv;
+        }
+        
+        function updateStatus(message, type) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = `status ${type}`;
+        }
+        
+        function updateStats() {
+            document.getElementById('messageCount').textContent = `Messages: ${messageCount}`;
+            document.getElementById('tokenCount').textContent = `Tokens used: ${totalTokens}`;
+        }
+        
+        function handleKeyPress(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        }
+        
+        // Test server connection on load
+        window.onload = async function() {
+            try {
+                updateStatus('🔄 Connecting to vLLM server...', 'loading');
+                const response = await fetch(`${API_BASE}/models`);
+                if (response.ok) {
+                    const models = await response.json();
+                    const modelName = models.data[0]?.id || 'InkubaLM-0.4B';
+                    updateStatus(`✅ Connected to vLLM server! Model: ${modelName}`, 'success');
+                } else {
+                    throw new Error('Server not responding properly');
+                }
+            } catch (error) {
+                updateStatus('❌ vLLM server not running. Please start the server first.', 'error');
+                console.error('Connection error:', error);
+            }
+            
+            // Focus input
+            document.getElementById('messageInput').focus();
+        };
+        
+        // Clear conversation function (optional)
+        function clearConversation() {
+            if (confirm('Clear conversation history?')) {
+                conversationHistory = [];
+                messageCount = 1; // Keep the welcome message
+                totalTokens = 0;
+                document.getElementById('chatContainer').innerHTML = `
+                    <div class="message assistant">
+                        Hello! I'm InkubaLM, an African language model. I can help you with various tasks including answering questions, writing, and conversation in multiple African languages. What would you like to talk about?
+                    </div>
+                `;
+                updateStats();
+                updateStatus('Conversation cleared!', 'success');
+            }
+        }
+        
+        // Add keyboard shortcut for clearing (Ctrl+L)
+        document.addEventListener('keydown', function(event) {
+            if (event.ctrlKey && event.key === 'l') {
+                event.preventDefault();
+                clearConversation();
+            }
+        });
+    </script>
+</body>
+</html>
