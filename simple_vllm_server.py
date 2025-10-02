@@ -11,7 +11,7 @@ def serve_inkuba():
     import subprocess
     import sys
     
-    model_path = "./dist/models/InkubaLM-0.4B"
+    model_path = "./models/InkubaLM-0.4B"
     
     print("🚀 Starting vLLM server for InkubaLM-0.4B...")
     print("📡 Server will be available at: http://localhost:8000")

@@ -9,7 +9,7 @@ echo "⏹️  Press Ctrl+C to stop the server"
 echo
 
 python -m vllm.entrypoints.openai.api_server \
-    --model ./dist/models/InkubaLM-0.4B \
+    --model ./models/InkubaLM-0.4B \
     --trust-remote-code \
     --host 0.0.0.0 \
     --port 8000 \
